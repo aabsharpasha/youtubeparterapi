@@ -1,4 +1,5 @@
 import os
+import time
 import requests
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build, build_from_document
@@ -262,10 +263,9 @@ def create_asset_and_reference(partner, video_id, content_owner_id, video_title)
     ).execute()
     asset_id = asset['id']
     print(f"Asset ID created: {asset_id}")
-    set_asset_match_policy(partner, content_owner_id, asset_id, policy_id)
-    print("Asset match policy set successfully.")
+    time.sleep(3)
 
-    # 2. SET OWNERSHIP
+    # 2. SET OWNERSHIP (required before setting asset match policy)
     # Note: Using 'assetId' instead of 'id'
     owners = [{"owner": content_owner_id, "ratio": 100.0, "type": "exclude", "territories": []}]
     body = {"general": owners}
@@ -275,8 +275,13 @@ def create_asset_and_reference(partner, video_id, content_owner_id, video_title)
         body=body
     ).execute()
     print("Ownership set successfully.")
+    time.sleep(3)
 
-    # 3. Create the Claim
+    # 3. Set asset match policy (ownership must already exist)
+    set_asset_match_policy(partner, content_owner_id, asset_id, policy_id)
+    print("Asset match policy set successfully.")
+
+    # 4. Create the Claim
     print(f"Claim policy: {CLAIM_POLICY_NAME!r} -> {policy_id}")
 
     claim_body = {
@@ -346,7 +351,7 @@ if __name__ == "__main__":
     if not content_owner_id:
         raise Exception("Content Owner ID not found")
     print(f"Content Owner ID: {content_owner_id}")
-    video_id = "zJh86Jdv40g"
+    video_id = "vdQHRVpdgz0"
     title = get_video_title(youtube, video_id)
     if FLOW_MODE == "reference":
         reference = create_reference_for_existing_claim(
