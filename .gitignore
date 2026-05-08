@@ -1,0 +1,12 @@
+.DS_Store
+__pycache__/
+*.pyc
+
+# Local secrets / tokens
+client_secret.json
+token.json
+token_for_upload_reference.json
+video.json
+
+# Local notes/docs
+Missing or wrong onBehalfOfContentOwner.md
