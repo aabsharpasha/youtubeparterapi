@@ -112,6 +112,20 @@ def print_applied_policy_details(partner, content_owner_id, claim_id=None, asset
             f"{policy_map.get(asset_policy_id, 'Unknown')} ({asset_policy_id})"
         )
 
+def patch_asset_metadata(partner, content_owner_id, asset_id, video_title, video_description=""):
+    partner.assets().patch(
+        onBehalfOfContentOwner=content_owner_id,
+        assetId=asset_id,
+        body={
+            "metadata": {
+                "title": video_title,
+                "description": video_description,
+                'customId': video_title.replace(" ", "_").lower()
+            },
+        },
+    ).execute()
+
+
 def set_asset_match_policy(partner, content_owner_id, asset_id, policy_id):
     partner.assetMatchPolicy().patch(
         onBehalfOfContentOwner=content_owner_id,
@@ -133,12 +147,20 @@ def set_asset_match_policy(partner, content_owner_id, asset_id, policy_id):
         )
 
 
-def get_video_title(youtube, video_id):
+def get_video_snippet(youtube, video_id):
     resp = youtube.videos().list(part='snippet', id=video_id, maxResults=1).execute()
     items = resp.get('items', [])
     if not items:
         raise ValueError(f"No video found for id: {video_id}")
-    return items[0]['snippet']['title']
+    snippet = items[0].get('snippet') or {}
+    return {
+        'title': snippet.get('title') or '',
+        'description': snippet.get('description') or '',
+    }
+
+
+def get_video_title(youtube, video_id):
+    return get_video_snippet(youtube, video_id)['title']
 
 
 def get_existing_claims_for_video(partner, content_owner_id, video_id):
@@ -208,7 +230,7 @@ def get_authenticated_services():
     partner = get_partner_api(creds)
     return youtube, partner
 
-def create_asset_and_reference(partner, video_id, content_owner_id, video_title):
+def create_asset_and_reference(partner, video_id, content_owner_id, video_title, video_description=''):
     existing_claims = get_existing_claims_for_video(partner, content_owner_id, video_id)
     if existing_claims:
         policy_id = resolve_claim_policy_id(partner, content_owner_id)
@@ -218,10 +240,22 @@ def create_asset_and_reference(partner, video_id, content_owner_id, video_title)
             f"Video {video_id} already has claim(s): {claim_ids}. "
             "Skipping new asset/claim creation."
         )
+        existing_claim = existing_claims[0]
+        existing_claim_id = existing_claim.get("id")
+        existing_asset_id = existing_claim.get("assetId")
+        if existing_asset_id:
+            patch_asset_metadata(
+                partner,
+                content_owner_id,
+                existing_asset_id,
+                video_title,
+                video_description,
+            )
+            print(
+                f"Updated asset metadata for asset {existing_asset_id} "
+                "(title/description)."
+            )
         if REAPPLY_POLICY_ON_EXISTING:
-            existing_claim = existing_claims[0]
-            existing_claim_id = existing_claim.get("id")
-            existing_asset_id = existing_claim.get("assetId")
             print(
                 f"Re-applying policy {policy_id} on existing "
                 f"claim={existing_claim_id}, asset={existing_asset_id}"
@@ -257,7 +291,11 @@ def create_asset_and_reference(partner, video_id, content_owner_id, video_title)
     asset = partner.assets().insert(
         onBehalfOfContentOwner=content_owner_id,
         body={
-            'metadata': {'title': video_title},
+            'metadata': {
+                'title': video_title,
+                'description': video_description,
+                'customId': video_title.replace(" ", "_").lower()
+            },
             'type': 'web', # Use 'movie' or 'episode' if for TV content
         },
     ).execute()
@@ -351,12 +389,18 @@ if __name__ == "__main__":
     if not content_owner_id:
         raise Exception("Content Owner ID not found")
     print(f"Content Owner ID: {content_owner_id}")
-    video_id = "vdQHRVpdgz0"
-    title = get_video_title(youtube, video_id)
+    video_id = "nXmwnvJsB4M"
+    snippet = get_video_snippet(youtube, video_id)
     if FLOW_MODE == "reference":
         reference = create_reference_for_existing_claim(
             partner, content_owner_id, video_id
         )
         print(f"Reference result: {reference}")
     else:
-        create_asset_and_reference(partner, video_id, content_owner_id, title)
+        create_asset_and_reference(
+            partner,
+            video_id,
+            content_owner_id,
+            snippet['title'],
+            snippet['description'],
+        )
